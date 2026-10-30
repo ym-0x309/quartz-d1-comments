@@ -8,8 +8,11 @@ This repository contains the **Quartz UI component only**. It does not provision
 
 - Anonymous comment submission; no visitor account required
 - Nickname, required email, optional website, and comment body
-- Chronological top-level comments with 30 threads per page
-- One level of replies under each top-level comment
+- Chronological top-level comments with pagination
+- Arbitrary-depth threaded replies, loaded on demand
+- Independent pagination for each comment's direct replies
+- Visual indentation capped at three levels, regardless of actual thread depth
+- Parent-author context shown as “Replying to {nickname}”
 - Cloudflare Turnstile challenge before submission
 - Email is submitted to the API but is never included in public API responses
 - Comment content is rendered as text, not HTML
@@ -60,11 +63,15 @@ The component is intended for content pages. Exclude its `blog-comments` layout 
 
 The default API path is `/api/comments`. It must resolve to the same origin as the Quartz site. Set `apiPath` to another same-origin path if needed.
 
-### List comment threads
+### List comments and direct replies
 
 `GET /api/comments?page=<encoded-page-path>&limit=30&offset=0`
 
-Pagination applies to top-level comments. Replies to each returned top-level comment are included with that comment, so a thread is never split across pages.
+This returns top-level comments. To fetch the direct replies to a comment, add `parentId`:
+
+`GET /api/comments?page=<encoded-page-path>&parentId=<comment-id>&limit=20&offset=0`
+
+Each request returns only one level of the tree. The client requests child replies only when a visitor expands that comment. This avoids loading every branch of a large discussion.
 
 Expected JSON response:
 
@@ -78,28 +85,22 @@ Expected JSON response:
       "website": "https://example.com",
       "body": "A comment",
       "createdAt": 1790000000,
-      "replies": [
-        {
-          "id": "reply-id",
-          "parentId": "comment-id",
-          "nickname": "Another reader",
-          "website": null,
-          "body": "A reply",
-          "createdAt": 1790000100
-        }
-      ]
+      "replyCount": 2
     }
   ],
+  "parentId": null,
   "hasMore": false,
   "nextOffset": null
 }
 ```
 
-The public response must not include email addresses or other private fields. `createdAt` is a Unix timestamp in seconds. The component requests 30 top-level comments at a time and expects both comments and replies in chronological order.
+When requesting replies, `parentId` in the response is the requested parent ID. Each comment includes `replyCount`, the number of its direct replies. The public response must not include email addresses or other private fields. `createdAt` is a Unix timestamp in seconds.
+
+Pagination is independent for each parent. The component requests 30 top-level comments and 20 direct replies per expanded comment by default. The API clamps the requested limit to its configured maximum.
 
 ### Submit a comment or reply
 
-`POST /api/comments` with a JSON body. Omit `parentId` or set it to `null` for a top-level comment. Set `parentId` to a top-level comment ID to create a reply:
+`POST /api/comments` with a JSON body. Omit `parentId` or set it to `null` for a top-level comment. Set `parentId` to any existing comment ID on the same page to create a reply at any depth:
 
 ```json
 {
@@ -113,7 +114,7 @@ The public response must not include email addresses or other private fields. `c
 }
 ```
 
-The API must reject a parent ID that does not belong to the requested page or that is itself a reply. This implementation supports one reply level, not nested replies to replies.
+The API must reject a parent ID that does not belong to the requested page. Replies can themselves receive replies, so the tree has no fixed logical depth limit. The UI caps visual indentation at three levels and displays the parent author for context.
 
 The API should validate all input, verify the Turnstile token **server-side** using the Secret Key, and store the email privately. A successful response should use a 2xx status. The component displays API-provided `error` text for most unsuccessful responses; it gives specific guidance for HTTP 403 and 503.
 

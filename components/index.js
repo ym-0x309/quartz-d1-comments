@@ -6,68 +6,49 @@ const styles = `
   padding-top: 1.5rem;
   border-top: 1px solid var(--lightgray);
 }
-
-.blog-comments-heading {
-  margin-bottom: 1.25rem;
-}
-
-.blog-comments-list {
-  display: grid;
-  gap: 1rem;
-}
-
+.blog-comments-heading { margin-bottom: 1.25rem; }
+.blog-comments-list { display: grid; gap: 1rem; }
 .blog-comment {
+  --comment-depth: 0;
+  margin-inline-start: min(calc(var(--comment-depth) * 1.15rem), 3.45rem);
   padding: 1rem;
   border: 1px solid var(--lightgray);
   border-radius: 0.5rem;
 }
-
 .blog-comment-reply {
   margin-top: 0.75rem;
-  margin-left: 1.5rem;
-  padding: 0.85rem;
-  border-left: 2px solid var(--lightgray);
-  border-radius: 0 0.4rem 0.4rem 0;
   background: color-mix(in srgb, var(--light) 75%, var(--lightgray));
 }
-
 .blog-comment-header {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.35rem 0.75rem;
-  margin-bottom: 0.65rem;
+  margin-bottom: 0.4rem;
 }
-
-.blog-comment-author {
-  color: var(--dark);
-  font-weight: 600;
-}
-
+.blog-comment-author { color: var(--dark); font-weight: 600; }
 .blog-comment-website,
-.blog-comment-time {
+.blog-comment-time,
+.blog-comment-replying-to {
   color: var(--gray);
   font-size: 0.85rem;
 }
-
-.blog-comment-time {
-  margin-left: auto;
-}
-
+.blog-comment-time { margin-left: auto; }
+.blog-comment-replying-to { margin: 0 0 0.55rem; }
 .blog-comment-body {
   margin: 0;
   color: var(--darkgray);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
 .blog-comment-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 0.75rem;
 }
-
 .blog-comments-reply-button,
+.blog-comments-toggle-replies,
 .blog-comments-cancel-reply {
   padding: 0;
   border: 0;
@@ -77,23 +58,23 @@ const styles = `
   font-size: 0.9rem;
   cursor: pointer;
 }
-
 .blog-comments-reply-button:hover,
-.blog-comments-cancel-reply:hover {
-  text-decoration: underline;
+.blog-comments-toggle-replies:hover,
+.blog-comments-cancel-reply:hover { text-decoration: underline; }
+.blog-comment-children {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.75rem;
 }
-
-.blog-comment-reply-slot:empty {
-  display: none;
-}
-
+.blog-comment-children[hidden] { display: none; }
+.blog-comment-children-list { display: grid; gap: 0.65rem; }
+.blog-comment-reply-slot:empty { display: none; }
 .blog-comments-empty,
-.blog-comments-error {
-  color: var(--gray);
-}
-
-.blog-comments-more {
-  margin-top: 1rem;
+.blog-comments-error { color: var(--gray); }
+.blog-comments-more,
+.blog-comments-load-more {
+  justify-self: start;
+  margin-top: 0.75rem;
   padding: 0.45rem 0.85rem;
   border: 1px solid var(--lightgray);
   border-radius: 0.4rem;
@@ -101,25 +82,19 @@ const styles = `
   color: var(--dark);
   cursor: pointer;
 }
-
 .blog-comments-form {
   display: grid;
   gap: 0.9rem;
   max-width: 48rem;
   margin-top: 2rem;
 }
-
-.blog-comments-form-heading {
-  margin: 0;
-}
-
+.blog-comments-form-heading { margin: 0; }
 .blog-comments-field {
   display: grid;
   gap: 0.35rem;
   color: var(--dark);
   font-weight: 600;
 }
-
 .blog-comments-field input,
 .blog-comments-field textarea {
   box-sizing: border-box;
@@ -132,32 +107,25 @@ const styles = `
   font: inherit;
   font-weight: 400;
 }
-
-.blog-comments-field textarea {
-  resize: vertical;
-}
-
+.blog-comments-field textarea { resize: vertical; }
 .blog-comments-field input:focus-visible,
 .blog-comments-field textarea:focus-visible,
 .blog-comments-more:focus-visible,
+.blog-comments-load-more:focus-visible,
 .blog-comments-submit:focus-visible,
 .blog-comments-reply-button:focus-visible,
+.blog-comments-toggle-replies:focus-visible,
 .blog-comments-cancel-reply:focus-visible {
   outline: 2px solid var(--secondary);
   outline-offset: 2px;
 }
-
-.blog-comments-turnstile {
-  min-height: 65px;
-}
-
+.blog-comments-turnstile { min-height: 65px; }
 .blog-comments-message {
   min-height: 1.4em;
   margin: 0;
   color: var(--secondary);
   font-size: 0.9rem;
 }
-
 .blog-comments-submit {
   justify-self: start;
   padding: 0.6rem 1rem;
@@ -168,22 +136,21 @@ const styles = `
   font: inherit;
   cursor: pointer;
 }
-
 .blog-comments-submit:disabled,
-.blog-comments-more:disabled {
+.blog-comments-more:disabled,
+.blog-comments-load-more:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
-
 .blog-comments-privacy {
   margin: 0;
   color: var(--gray);
   font-size: 0.85rem;
 }
-
 @media (max-width: 600px) {
-  .blog-comment-reply {
-    margin-left: 0.65rem;
+  .blog-comment {
+    margin-inline-start: min(calc(var(--comment-depth) * 0.55rem), 1.65rem);
+    padding: 0.8rem;
   }
 }
 `;
@@ -199,21 +166,18 @@ const script = String.raw`
   function loadTurnstile() {
     if (window.turnstile) return Promise.resolve(window.turnstile);
     if (turnstilePromise) return turnstilePromise;
-
     turnstilePromise = new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
       script.async = true;
       script.defer = true;
       script.dataset.blogCommentsTurnstile = "true";
-      script.onload = () => {
-        if (window.turnstile) resolve(window.turnstile);
-        else reject(new Error("Turnstile API did not initialize"));
-      };
+      script.onload = () => window.turnstile
+        ? resolve(window.turnstile)
+        : reject(new Error("Turnstile API did not initialize"));
       script.onerror = () => reject(new Error("Turnstile script failed to load"));
       document.head.appendChild(script);
     });
-
     return turnstilePromise;
   }
 
@@ -236,10 +200,23 @@ const script = String.raw`
     }
   }
 
-  function renderComment(comment, locale, isReply = false) {
+  function makeButton(className, text, data = {}) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = text;
+    for (const [key, value] of Object.entries(data)) {
+      button.dataset[key] = String(value);
+    }
+    return button;
+  }
+
+  function renderComment(comment, locale, depth = 0, parentNickname = null) {
     const article = document.createElement("article");
-    article.className = isReply ? "blog-comment blog-comment-reply" : "blog-comment";
+    article.className = depth === 0 ? "blog-comment" : "blog-comment blog-comment-reply";
     article.dataset.commentId = String(comment.id ?? "");
+    article.dataset.replyCount = String(Number(comment.replyCount) || 0);
+    article.style.setProperty("--comment-depth", String(depth));
 
     const header = document.createElement("div");
     header.className = "blog-comment-header";
@@ -266,40 +243,62 @@ const script = String.raw`
       const time = document.createElement("time");
       time.className = "blog-comment-time";
       time.dateTime = date.toISOString();
-      // locale affects date/time formatting only; all interface text is English.
       time.textContent = date.toLocaleString(locale);
       header.appendChild(time);
+    }
+
+    article.appendChild(header);
+
+    if (parentNickname) {
+      const context = document.createElement("p");
+      context.className = "blog-comment-replying-to";
+      context.textContent = "Replying to " + parentNickname;
+      article.appendChild(context);
     }
 
     const body = document.createElement("p");
     body.className = "blog-comment-body";
     body.textContent = String(comment.body ?? "");
+    article.appendChild(body);
 
-    article.append(header, body);
+    const actions = document.createElement("div");
+    actions.className = "blog-comment-actions";
+    actions.appendChild(makeButton(
+      "blog-comments-reply-button",
+      "Reply",
+      { replyTo: comment.id, replyAuthor: comment.nickname ?? "this comment" },
+    ));
 
-    if (!isReply) {
-      const actions = document.createElement("div");
-      actions.className = "blog-comment-actions";
-
-      const replyButton = document.createElement("button");
-      replyButton.type = "button";
-      replyButton.className = "blog-comments-reply-button";
-      replyButton.dataset.replyTo = String(comment.id);
-      replyButton.dataset.replyAuthor = String(comment.nickname ?? "this comment");
-      replyButton.textContent = "Reply";
-      actions.appendChild(replyButton);
-      article.appendChild(actions);
-
-      const replySlot = document.createElement("div");
-      replySlot.className = "blog-comment-reply-slot";
-      article.appendChild(replySlot);
-
-      const replies = Array.isArray(comment.replies) ? comment.replies : [];
-      for (const reply of replies) {
-        article.appendChild(renderComment(reply, locale, true));
-      }
+    const replyCount = Number(comment.replyCount) || 0;
+    if (replyCount > 0) {
+      actions.appendChild(makeButton(
+        "blog-comments-toggle-replies",
+        "View " + replyCount + (replyCount === 1 ? " reply" : " replies"),
+        { toggleReplies: comment.id },
+      ));
     }
 
+    article.appendChild(actions);
+
+    const replySlot = document.createElement("div");
+    replySlot.className = "blog-comment-reply-slot";
+    article.appendChild(replySlot);
+
+    const children = document.createElement("div");
+    children.className = "blog-comment-children";
+    children.hidden = true;
+
+    const childList = document.createElement("div");
+    childList.className = "blog-comment-children-list";
+    children.appendChild(childList);
+
+    const loadMore = makeButton("blog-comments-load-more", "Load more replies", {
+      loadMoreReplies: comment.id,
+    });
+    loadMore.hidden = true;
+    children.appendChild(loadMore);
+
+    article.appendChild(children);
     return article;
   }
 
@@ -335,19 +334,20 @@ const script = String.raw`
       return;
     }
 
-    let nextOffset = 0;
-    let hasMore = false;
+    let rootOffset = 0;
+    let rootHasMore = false;
     let turnstile = null;
     let widgetId = null;
     let turnstileToken = null;
+    let activeReplyParent = null;
+    const threadStates = new Map();
 
-    const setMessage = (text) => {
-      message.textContent = text;
-    };
+    const setMessage = (text) => { message.textContent = text; };
 
     function closeReplyForm() {
       formHome.appendChild(form);
       delete form.dataset.parentId;
+      activeReplyParent = null;
       formHeading.textContent = "Leave a comment";
       submitButton.textContent = "Post comment";
       cancelReplyButton.hidden = true;
@@ -355,6 +355,7 @@ const script = String.raw`
 
     function openReplyForm(parentId, authorName, slot) {
       form.dataset.parentId = parentId;
+      activeReplyParent = parentId;
       formHeading.textContent = "Reply to " + authorName;
       submitButton.textContent = "Post reply";
       cancelReplyButton.hidden = false;
@@ -363,82 +364,169 @@ const script = String.raw`
       form.elements.namedItem("body").focus();
     }
 
-    cancelReplyButton.addEventListener("click", closeReplyForm);
+    function endpointFor(parentId, offset) {
+      const endpoint = new URL(apiUrl.href);
+      endpoint.searchParams.set("page", window.location.pathname);
+      endpoint.searchParams.set("limit", "20");
+      endpoint.searchParams.set("offset", String(offset));
+      if (parentId) endpoint.searchParams.set("parentId", parentId);
+      return endpoint;
+    }
 
-    list.addEventListener("click", (event) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const button = target.closest("[data-reply-to]");
-      if (!button || !list.contains(button)) return;
+    async function requestComments(parentId, offset) {
+      const response = await fetch(endpointFor(parentId, offset).href, {
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to load comments.");
+      return data;
+    }
 
-      const parentId = button.dataset.replyTo;
-      if (!parentId) return;
-      const slot = button.closest(".blog-comment")?.querySelector(".blog-comment-reply-slot");
-      if (!slot) return;
-
-      openReplyForm(parentId, button.dataset.replyAuthor || "this comment", slot);
-    });
-
-    async function fetchComments(reset) {
-      const offset = reset ? 0 : nextOffset;
+    async function loadRootComments(reset) {
+      const offset = reset ? 0 : rootOffset;
       list.setAttribute("aria-busy", "true");
+      moreButton.disabled = true;
       if (reset) {
         closeReplyForm();
         list.replaceChildren(makeMessage("blog-comments-empty", "Loading comments…"));
-      } else {
-        moreButton.disabled = true;
       }
 
       try {
-        const endpoint = new URL(apiUrl.href);
-        endpoint.searchParams.set("page", window.location.pathname);
-        endpoint.searchParams.set("limit", "30");
-        endpoint.searchParams.set("offset", String(offset));
-
-        const response = await fetch(endpoint.href, {
-          headers: { Accept: "application/json" },
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(data.error || "Unable to load comments.");
-        }
-
+        const data = await requestComments(null, offset);
         const comments = Array.isArray(data.comments) ? data.comments : [];
         if (reset) list.replaceChildren();
-
         for (const comment of comments) {
           list.appendChild(renderComment(comment, locale));
         }
-
         if (reset && comments.length === 0) {
           list.appendChild(makeMessage("blog-comments-empty", "No comments yet. Be the first to comment."));
         }
-
-        hasMore = data.hasMore === true && Number.isInteger(data.nextOffset);
-        nextOffset = hasMore ? data.nextOffset : 0;
-        moreButton.hidden = !hasMore;
+        rootHasMore = data.hasMore === true && Number.isInteger(data.nextOffset);
+        rootOffset = rootHasMore ? data.nextOffset : 0;
+        moreButton.hidden = !rootHasMore;
       } catch (error) {
-        if (reset) {
-          list.replaceChildren(
-            makeMessage("blog-comments-error", "Unable to load comments. Please refresh the page."),
-          );
-        } else {
-          setMessage(error instanceof Error ? error.message : "Unable to load comments.");
-        }
+        if (reset) list.replaceChildren(makeMessage(
+          "blog-comments-error",
+          "Unable to load comments. Please refresh the page.",
+        ));
+        else setMessage(error instanceof Error ? error.message : "Unable to load comments.");
       } finally {
         list.setAttribute("aria-busy", "false");
         moreButton.disabled = false;
       }
     }
 
+    async function loadReplies(parentId, article, reset) {
+      const childList = article.querySelector(".blog-comment-children-list");
+      const loadMore = article.querySelector(".blog-comments-load-more");
+      const children = article.querySelector(".blog-comment-children");
+      const state = threadStates.get(parentId) ?? { offset: 0, hasMore: false, loaded: false, loading: false };
+      if (state.loading) return;
+      state.loading = true;
+      threadStates.set(parentId, state);
+      loadMore.disabled = true;
+      if (reset) childList.replaceChildren(makeMessage("blog-comments-empty", "Loading replies…"));
+
+      try {
+        const data = await requestComments(parentId, reset ? 0 : state.offset);
+        const comments = Array.isArray(data.comments) ? data.comments : [];
+        if (reset) childList.replaceChildren();
+        const parentAuthor = article.querySelector(".blog-comment-author")?.textContent || "this comment";
+        for (const comment of comments) {
+          childList.appendChild(renderComment(comment, locale, Number(article.style.getPropertyValue("--comment-depth")) + 1, parentAuthor));
+        }
+        if (reset && comments.length === 0) {
+          childList.appendChild(makeMessage("blog-comments-empty", "No replies yet."));
+        }
+        state.hasMore = data.hasMore === true && Number.isInteger(data.nextOffset);
+        state.offset = state.hasMore ? data.nextOffset : 0;
+        state.loaded = true;
+        loadMore.hidden = !state.hasMore;
+        children.hidden = false;
+        const toggle = article.querySelector("[data-toggle-replies]");
+        if (toggle) toggle.textContent = "Hide replies";
+      } catch (error) {
+        if (reset) childList.replaceChildren(makeMessage(
+          "blog-comments-error",
+          error instanceof Error ? error.message : "Unable to load replies.",
+        ));
+        else setMessage(error instanceof Error ? error.message : "Unable to load replies.");
+      } finally {
+        state.loading = false;
+        loadMore.disabled = false;
+      }
+    }
+
+    function updateReplyCount(article, delta) {
+      const nextCount = Math.max(0, Number(article.dataset.replyCount || 0) + delta);
+      article.dataset.replyCount = String(nextCount);
+      let toggle = article.querySelector("[data-toggle-replies]");
+      if (nextCount === 0) {
+        toggle?.remove();
+        return;
+      }
+      if (!toggle) {
+        toggle = makeButton("blog-comments-toggle-replies", "", {
+          toggleReplies: article.dataset.commentId,
+        });
+        article.querySelector(".blog-comment-actions").appendChild(toggle);
+      }
+      const expanded = !article.querySelector(".blog-comment-children").hidden;
+      toggle.textContent = expanded
+        ? "Hide replies"
+        : "View " + nextCount + (nextCount === 1 ? " reply" : " replies");
+    }
+
+    cancelReplyButton.addEventListener("click", closeReplyForm);
+
+    list.addEventListener("click", async (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const replyButton = target.closest("[data-reply-to]");
+      if (replyButton && list.contains(replyButton)) {
+        const article = replyButton.closest(".blog-comment");
+        const slot = article?.querySelector(".blog-comment-reply-slot");
+        if (article && slot) {
+          openReplyForm(article.dataset.commentId, replyButton.dataset.replyAuthor || "this comment", slot);
+        }
+        return;
+      }
+
+      const toggle = target.closest("[data-toggle-replies]");
+      if (toggle && list.contains(toggle)) {
+        const article = toggle.closest(".blog-comment");
+        const parentId = toggle.dataset.toggleReplies;
+        const children = article?.querySelector(".blog-comment-children");
+        if (!article || !children) return;
+        if (!children.hidden) {
+          children.hidden = true;
+          toggle.textContent = "View " + article.dataset.replyCount +
+            (Number(article.dataset.replyCount) === 1 ? " reply" : " replies");
+          return;
+        }
+        children.hidden = false;
+        const state = threadStates.get(parentId);
+        if (!state?.loaded) await loadReplies(parentId, article, true);
+        else toggle.textContent = "Hide replies";
+        return;
+      }
+
+      const loadMore = target.closest("[data-load-more-replies]");
+      if (loadMore && list.contains(loadMore)) {
+        const article = loadMore.closest(".blog-comment");
+        const parentId = loadMore.dataset.loadMoreReplies;
+        if (article) await loadReplies(parentId, article, false);
+      }
+    });
+
     moreButton.addEventListener("click", () => {
-      if (hasMore) fetchComments(false);
+      if (rootHasMore) loadRootComments(false);
     });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       if (!form.reportValidity()) return;
-
       if (!turnstileToken) {
         setMessage("Please complete the spam protection check before posting.");
         return;
@@ -463,25 +551,17 @@ const script = String.raw`
       try {
         const response = await fetch(apiUrl.href, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(payload),
         });
         const data = await response.json().catch(() => ({}));
-
         if (!response.ok) {
           if (response.status === 403 && turnstile) {
             turnstileToken = null;
             turnstile.reset(widgetId);
           }
-          if (response.status === 403) {
-            throw new Error("Spam protection verification failed. Please try again.");
-          }
-          if (response.status === 503) {
-            throw new Error("Spam protection is temporarily unavailable. Please try again later.");
-          }
+          if (response.status === 403) throw new Error("Spam protection verification failed. Please try again.");
+          if (response.status === 503) throw new Error("Spam protection is temporarily unavailable. Please try again later.");
           throw new Error(data.error || "Unable to post your comment.");
         }
 
@@ -489,8 +569,22 @@ const script = String.raw`
         turnstileToken = null;
         if (turnstile) turnstile.reset(widgetId);
         closeReplyForm();
-        setMessage(parentId ? "Your reply has been posted." : "Your comment has been posted.");
-        await fetchComments(true);
+
+        if (parentId) {
+          const parentArticle = list.querySelector(
+            '[data-comment-id="' + CSS.escape(parentId) + '"]',
+          );
+          if (parentArticle) {
+            updateReplyCount(parentArticle, 1);
+            const children = parentArticle.querySelector(".blog-comment-children");
+            children.hidden = false;
+            await loadReplies(parentId, parentArticle, true);
+          }
+          setMessage("Your reply has been posted.");
+        } else {
+          await loadRootComments(true);
+          setMessage("Your comment has been posted.");
+        }
       } catch (error) {
         setMessage(error instanceof Error ? error.message : "Unable to post your comment.");
       } finally {
@@ -499,7 +593,7 @@ const script = String.raw`
       }
     });
 
-    await fetchComments(true);
+    await loadRootComments(true);
 
     if (!siteKey) {
       submitButton.disabled = true;
@@ -511,15 +605,11 @@ const script = String.raw`
     try {
       turnstile = await loadTurnstile();
       if (!root.isConnected) return;
-
       widgetId = turnstile.render(turnstileContainer, {
         sitekey: siteKey,
         theme: "auto",
         language: "en",
-        callback: (token) => {
-          turnstileToken = token;
-          setMessage("");
-        },
+        callback: (token) => { turnstileToken = token; setMessage(""); },
         "expired-callback": () => {
           turnstileToken = null;
           setMessage("The spam protection check expired. Please verify again.");
@@ -550,104 +640,47 @@ export function BlogComments(options = {}) {
     const commentsEnabled = fileData.frontmatter?.comments;
     if (commentsEnabled === false || commentsEnabled === "false") return null;
 
-    return h(
-      "section",
-      {
-        id: "blog-comments",
-        class: ["blog-comments", displayClass].filter(Boolean).join(" "),
-        "data-api-path": apiPath,
-        "data-turnstile-site-key": turnstileSiteKey,
-        "data-locale": locale,
-        lang: "en",
-        "aria-labelledby": "blog-comments-heading",
-      },
-      [
-        h("h2", { id: "blog-comments-heading", class: "blog-comments-heading" }, "Comments"),
-        h("div", {
-          class: "blog-comments-list",
-          "aria-live": "polite",
-          "aria-busy": "true",
-        }),
-        h(
-          "button",
-          {
-            type: "button",
-            class: "blog-comments-more",
-            hidden: true,
-          },
-          "Load more",
-        ),
-        h("div", { class: "blog-comments-form-home" }, [
-          h("form", { class: "blog-comments-form" }, [
-            h("h3", { class: "blog-comments-form-heading" }, "Leave a comment"),
-            h("label", { class: "blog-comments-field" }, [
-              h("span", {}, "Nickname"),
-              h("input", {
-                type: "text",
-                name: "nickname",
-                maxLength: 40,
-                autoComplete: "nickname",
-                placeholder: "Your display name",
-                required: true,
-              }),
-            ]),
-            h("label", { class: "blog-comments-field" }, [
-              h("span", {}, "Email"),
-              h("input", {
-                type: "email",
-                name: "email",
-                maxLength: 254,
-                autoComplete: "email",
-                placeholder: "Your email address",
-                required: true,
-              }),
-            ]),
-            h("label", { class: "blog-comments-field" }, [
-              h("span", {}, "Website (optional)"),
-              h("input", {
-                type: "url",
-                name: "website",
-                maxLength: 2048,
-                autoComplete: "url",
-                placeholder: "https://example.com",
-              }),
-            ]),
-            h("label", { class: "blog-comments-field" }, [
-              h("span", {}, "Comment"),
-              h("textarea", {
-                name: "body",
-                rows: 5,
-                maxLength: 5000,
-                placeholder: "Write your comment…",
-                required: true,
-              }),
-            ]),
-            h("div", {
-              class: "blog-comments-turnstile",
-              "aria-label": "Spam protection check",
-            }),
-            h("p", {
-              class: "blog-comments-message",
-              role: "status",
-              "aria-live": "polite",
-            }),
-            h("button", {
-              type: "submit",
-              class: "blog-comments-submit",
-              disabled: true,
-            }, "Post comment"),
-            h("button", {
-              type: "button",
-              class: "blog-comments-cancel-reply",
-              hidden: true,
-            }, "Cancel reply"),
-            h("p", { class: "blog-comments-privacy" },
-              "Comments are published immediately. Your email address is not displayed and is stored for comment administration and spam prevention.",
-            ),
+    return h("section", {
+      id: "blog-comments",
+      class: ["blog-comments", displayClass].filter(Boolean).join(" "),
+      "data-api-path": apiPath,
+      "data-turnstile-site-key": turnstileSiteKey,
+      "data-locale": locale,
+      lang: "en",
+      "aria-labelledby": "blog-comments-heading",
+    }, [
+      h("h2", { id: "blog-comments-heading", class: "blog-comments-heading" }, "Comments"),
+      h("div", { class: "blog-comments-list", "aria-live": "polite", "aria-busy": "true" }),
+      h("button", { type: "button", class: "blog-comments-more", hidden: true }, "Load more"),
+      h("div", { class: "blog-comments-form-home" }, [
+        h("form", { class: "blog-comments-form" }, [
+          h("h3", { class: "blog-comments-form-heading" }, "Leave a comment"),
+          h("label", { class: "blog-comments-field" }, [
+            h("span", {}, "Nickname"),
+            h("input", { type: "text", name: "nickname", maxLength: 40, autoComplete: "nickname", placeholder: "Your display name", required: true }),
           ]),
+          h("label", { class: "blog-comments-field" }, [
+            h("span", {}, "Email"),
+            h("input", { type: "email", name: "email", maxLength: 254, autoComplete: "email", placeholder: "Your email address", required: true }),
+          ]),
+          h("label", { class: "blog-comments-field" }, [
+            h("span", {}, "Website (optional)"),
+            h("input", { type: "url", name: "website", maxLength: 2048, autoComplete: "url", placeholder: "https://example.com" }),
+          ]),
+          h("label", { class: "blog-comments-field" }, [
+            h("span", {}, "Comment"),
+            h("textarea", { name: "body", rows: 5, maxLength: 5000, placeholder: "Write your comment…", required: true }),
+          ]),
+          h("div", { class: "blog-comments-turnstile", "aria-label": "Spam protection check" }),
+          h("p", { class: "blog-comments-message", role: "status", "aria-live": "polite" }),
+          h("button", { type: "submit", class: "blog-comments-submit", disabled: true }, "Post comment"),
+          h("button", { type: "button", class: "blog-comments-cancel-reply", hidden: true }, "Cancel reply"),
+          h("p", { class: "blog-comments-privacy" },
+            "Comments are published immediately. Your email address is not displayed and is stored for comment administration and spam prevention.",
+          ),
         ]),
-      ],
-    );
+      ]),
+    ]);
   };
 
   BlogCommentsComponent.css = styles;

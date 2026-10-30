@@ -4,7 +4,7 @@ export default defineConfig({
   entry: ["src/index.ts"],
   format: ["esm"],
   target: "es2022",
-  platform: "browser",
+  platform: "node",
   bundle: true,
   splitting: false,
   sourcemap: true,

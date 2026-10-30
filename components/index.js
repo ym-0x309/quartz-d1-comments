@@ -10,7 +10,8 @@ const styles = `
 .blog-comments-list { display: grid; gap: 1rem; }
 .blog-comment {
   --comment-depth: 0;
-  margin-inline-start: min(calc(var(--comment-depth) * 1.15rem), 3.45rem);
+  --comment-indent-step: 1.15rem;
+  margin-inline-start: calc(var(--comment-indent-step) * var(--comment-indent-active, 0));
   padding: 1rem;
   border: 1px solid var(--lightgray);
   border-radius: 0.5rem;
@@ -149,7 +150,7 @@ const styles = `
 }
 @media (max-width: 600px) {
   .blog-comment {
-    margin-inline-start: min(calc(var(--comment-depth) * 0.55rem), 1.65rem);
+    --comment-indent-step: 0.55rem;
     padding: 0.8rem;
   }
 }
@@ -217,6 +218,9 @@ const script = String.raw`
     article.dataset.commentId = String(comment.id ?? "");
     article.dataset.replyCount = String(Number(comment.replyCount) || 0);
     article.style.setProperty("--comment-depth", String(depth));
+    // Each nested level adds one step up to level three; deeper levels
+    // preserve their logical depth without consuming additional width.
+    article.style.setProperty("--comment-indent-active", depth > 0 && depth <= 3 ? "1" : "0");
 
     const header = document.createElement("div");
     header.className = "blog-comment-header";
@@ -339,7 +343,6 @@ const script = String.raw`
     let turnstile = null;
     let widgetId = null;
     let turnstileToken = null;
-    let activeReplyParent = null;
     const threadStates = new Map();
 
     const setMessage = (text) => { message.textContent = text; };
@@ -347,7 +350,6 @@ const script = String.raw`
     function closeReplyForm() {
       formHome.appendChild(form);
       delete form.dataset.parentId;
-      activeReplyParent = null;
       formHeading.textContent = "Leave a comment";
       submitButton.textContent = "Post comment";
       cancelReplyButton.hidden = true;
@@ -355,7 +357,6 @@ const script = String.raw`
 
     function openReplyForm(parentId, authorName, slot) {
       form.dataset.parentId = parentId;
-      activeReplyParent = parentId;
       formHeading.textContent = "Reply to " + authorName;
       submitButton.textContent = "Post reply";
       cancelReplyButton.hidden = false;

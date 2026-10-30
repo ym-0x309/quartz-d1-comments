@@ -1,0 +1,53 @@
+{
+  "name": "@ym-0x309/quartz-d1-comments",
+  "version": "0.1.0",
+  "description": "A self-hosted D1 and Turnstile comment component for Quartz 5",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ym-0x309/quartz-d1-comments.git"
+  },
+  "homepage": "https://github.com/ym-0x309/quartz-d1-comments#readme",
+  "bugs": {
+    "url": "https://github.com/ym-0x309/quartz-d1-comments/issues"
+  },
+  "keywords": [
+    "quartz",
+    "quartz-plugin",
+    "comments",
+    "cloudflare",
+    "d1",
+    "turnstile"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./components": "./components/index.js"
+  },
+  "peerDependencies": {
+    "preact": "^10.0.0"
+  },
+  "quartz": {
+    "name": "quartz-d1-comments",
+    "displayName": "Quartz D1 Comments",
+    "description": "A self-hosted comment component backed by a same-origin API and Cloudflare Turnstile.",
+    "version": "0.1.0",
+    "quartzVersion": ">=5.0.0",
+    "category": "component",
+    "defaultEnabled": false,
+    "defaultOptions": {
+      "apiPath": "/api/comments",
+      "turnstileSiteKey": "",
+      "locale": "ko-KR"
+    },
+    "components": {
+      "BlogComments": {
+        "displayName": "Blog Comments",
+        "description": "Displays and submits comments through the site's comments API.",
+        "version": "0.1.0",
+        "defaultPosition": "afterBody",
+        "defaultPriority": 10
+      }
+    }
+  }
+}

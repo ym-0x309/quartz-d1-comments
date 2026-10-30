@@ -389,6 +389,7 @@ const script = String.raw`
       moreButton.disabled = true;
       if (reset) {
         closeReplyForm();
+        threadStates.clear();
         list.replaceChildren(makeMessage("blog-comments-empty", "Loading comments…"));
       }
 
@@ -424,6 +425,7 @@ const script = String.raw`
       const state = threadStates.get(parentId) ?? { offset: 0, hasMore: false, loaded: false, loading: false };
       if (state.loading) return;
       state.loading = true;
+      if (reset) state.loaded = false;
       threadStates.set(parentId, state);
       loadMore.disabled = true;
       if (reset) childList.replaceChildren(makeMessage("blog-comments-empty", "Loading replies…"));
@@ -447,11 +449,13 @@ const script = String.raw`
         const toggle = article.querySelector("[data-toggle-replies]");
         if (toggle) toggle.textContent = "Hide replies";
       } catch (error) {
-        if (reset) childList.replaceChildren(makeMessage(
-          "blog-comments-error",
-          error instanceof Error ? error.message : "Unable to load replies.",
-        ));
-        else setMessage(error instanceof Error ? error.message : "Unable to load replies.");
+        if (reset) {
+          state.loaded = false;
+          childList.replaceChildren(makeMessage(
+            "blog-comments-error",
+            error instanceof Error ? error.message : "Unable to load replies.",
+          ));
+        } else setMessage(error instanceof Error ? error.message : "Unable to load replies.");
       } finally {
         state.loading = false;
         loadMore.disabled = false;

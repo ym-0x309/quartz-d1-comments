@@ -22,6 +22,15 @@ const styles = `
   border-radius: 0.5rem;
 }
 
+.blog-comment-reply {
+  margin-top: 0.75rem;
+  margin-left: 1.5rem;
+  padding: 0.85rem;
+  border-left: 2px solid var(--lightgray);
+  border-radius: 0 0.4rem 0.4rem 0;
+  background: color-mix(in srgb, var(--light) 75%, var(--lightgray));
+}
+
 .blog-comment-header {
   display: flex;
   flex-wrap: wrap;
@@ -50,6 +59,32 @@ const styles = `
   color: var(--darkgray);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.blog-comment-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.blog-comments-reply-button,
+.blog-comments-cancel-reply {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.blog-comments-reply-button:hover,
+.blog-comments-cancel-reply:hover {
+  text-decoration: underline;
+}
+
+.blog-comment-reply-slot:empty {
+  display: none;
 }
 
 .blog-comments-empty,
@@ -105,7 +140,9 @@ const styles = `
 .blog-comments-field input:focus-visible,
 .blog-comments-field textarea:focus-visible,
 .blog-comments-more:focus-visible,
-.blog-comments-submit:focus-visible {
+.blog-comments-submit:focus-visible,
+.blog-comments-reply-button:focus-visible,
+.blog-comments-cancel-reply:focus-visible {
   outline: 2px solid var(--secondary);
   outline-offset: 2px;
 }
@@ -142,6 +179,12 @@ const styles = `
   margin: 0;
   color: var(--gray);
   font-size: 0.85rem;
+}
+
+@media (max-width: 600px) {
+  .blog-comment-reply {
+    margin-left: 0.65rem;
+  }
 }
 `;
 
@@ -193,16 +236,17 @@ const script = String.raw`
     }
   }
 
-  function renderComment(comment, locale) {
+  function renderComment(comment, locale, isReply = false) {
     const article = document.createElement("article");
-    article.className = "blog-comment";
+    article.className = isReply ? "blog-comment blog-comment-reply" : "blog-comment";
+    article.dataset.commentId = String(comment.id ?? "");
 
     const header = document.createElement("div");
     header.className = "blog-comment-header";
 
     const author = document.createElement("span");
     author.className = "blog-comment-author";
-    author.textContent = String(comment.nickname ?? "익명");
+    author.textContent = String(comment.nickname ?? "Anonymous");
     header.appendChild(author);
 
     const website = safeWebsite(comment.website);
@@ -222,6 +266,7 @@ const script = String.raw`
       const time = document.createElement("time");
       time.className = "blog-comment-time";
       time.dateTime = date.toISOString();
+      // locale affects date/time formatting only; all interface text is English.
       time.textContent = date.toLocaleString(locale);
       header.appendChild(time);
     }
@@ -231,6 +276,30 @@ const script = String.raw`
     body.textContent = String(comment.body ?? "");
 
     article.append(header, body);
+
+    if (!isReply) {
+      const actions = document.createElement("div");
+      actions.className = "blog-comment-actions";
+
+      const replyButton = document.createElement("button");
+      replyButton.type = "button";
+      replyButton.className = "blog-comments-reply-button";
+      replyButton.dataset.replyTo = String(comment.id);
+      replyButton.dataset.replyAuthor = String(comment.nickname ?? "this comment");
+      replyButton.textContent = "Reply";
+      actions.appendChild(replyButton);
+      article.appendChild(actions);
+
+      const replySlot = document.createElement("div");
+      replySlot.className = "blog-comment-reply-slot";
+      article.appendChild(replySlot);
+
+      const replies = Array.isArray(comment.replies) ? comment.replies : [];
+      for (const reply of replies) {
+        article.appendChild(renderComment(reply, locale, true));
+      }
+    }
+
     return article;
   }
 
@@ -242,11 +311,14 @@ const script = String.raw`
     const list = root.querySelector(".blog-comments-list");
     const moreButton = root.querySelector(".blog-comments-more");
     const form = root.querySelector(".blog-comments-form");
+    const formHome = root.querySelector(".blog-comments-form-home");
+    const formHeading = root.querySelector(".blog-comments-form-heading");
     const message = root.querySelector(".blog-comments-message");
     const submitButton = root.querySelector(".blog-comments-submit");
+    const cancelReplyButton = root.querySelector(".blog-comments-cancel-reply");
     const turnstileContainer = root.querySelector(".blog-comments-turnstile");
     const siteKey = root.dataset.turnstileSiteKey ?? "";
-    const locale = root.dataset.locale || "ko-KR";
+    const locale = root.dataset.locale || "en-US";
     const apiPath = root.dataset.apiPath || "/api/comments";
 
     let apiUrl;
@@ -258,7 +330,7 @@ const script = String.raw`
       apiUrl.search = "";
       apiUrl.hash = "";
     } catch {
-      list.replaceChildren(makeMessage("blog-comments-error", "댓글 API 주소 설정이 올바르지 않습니다."));
+      list.replaceChildren(makeMessage("blog-comments-error", "The comments API URL is invalid."));
       submitButton.disabled = true;
       return;
     }
@@ -273,11 +345,46 @@ const script = String.raw`
       message.textContent = text;
     };
 
+    function closeReplyForm() {
+      formHome.appendChild(form);
+      delete form.dataset.parentId;
+      formHeading.textContent = "Leave a comment";
+      submitButton.textContent = "Post comment";
+      cancelReplyButton.hidden = true;
+    }
+
+    function openReplyForm(parentId, authorName, slot) {
+      form.dataset.parentId = parentId;
+      formHeading.textContent = "Reply to " + authorName;
+      submitButton.textContent = "Post reply";
+      cancelReplyButton.hidden = false;
+      slot.appendChild(form);
+      setMessage("");
+      form.elements.namedItem("body").focus();
+    }
+
+    cancelReplyButton.addEventListener("click", closeReplyForm);
+
+    list.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("[data-reply-to]");
+      if (!button || !list.contains(button)) return;
+
+      const parentId = button.dataset.replyTo;
+      if (!parentId) return;
+      const slot = button.closest(".blog-comment")?.querySelector(".blog-comment-reply-slot");
+      if (!slot) return;
+
+      openReplyForm(parentId, button.dataset.replyAuthor || "this comment", slot);
+    });
+
     async function fetchComments(reset) {
       const offset = reset ? 0 : nextOffset;
       list.setAttribute("aria-busy", "true");
       if (reset) {
-        list.replaceChildren(makeMessage("blog-comments-empty", "댓글을 불러오는 중입니다."));
+        closeReplyForm();
+        list.replaceChildren(makeMessage("blog-comments-empty", "Loading comments…"));
       } else {
         moreButton.disabled = true;
       }
@@ -293,7 +400,7 @@ const script = String.raw`
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          throw new Error(data.error || "댓글을 불러오지 못했습니다.");
+          throw new Error(data.error || "Unable to load comments.");
         }
 
         const comments = Array.isArray(data.comments) ? data.comments : [];
@@ -304,7 +411,7 @@ const script = String.raw`
         }
 
         if (reset && comments.length === 0) {
-          list.appendChild(makeMessage("blog-comments-empty", "아직 댓글이 없습니다. 첫 댓글을 남겨 보세요."));
+          list.appendChild(makeMessage("blog-comments-empty", "No comments yet. Be the first to comment."));
         }
 
         hasMore = data.hasMore === true && Number.isInteger(data.nextOffset);
@@ -313,10 +420,10 @@ const script = String.raw`
       } catch (error) {
         if (reset) {
           list.replaceChildren(
-            makeMessage("blog-comments-error", "댓글을 불러오지 못했습니다. 페이지를 새로고침해 주세요."),
+            makeMessage("blog-comments-error", "Unable to load comments. Please refresh the page."),
           );
         } else {
-          setMessage(error instanceof Error ? error.message : "댓글을 불러오지 못했습니다.");
+          setMessage(error instanceof Error ? error.message : "Unable to load comments.");
         }
       } finally {
         list.setAttribute("aria-busy", "false");
@@ -333,13 +440,15 @@ const script = String.raw`
       if (!form.reportValidity()) return;
 
       if (!turnstileToken) {
-        setMessage("댓글을 등록하기 전에 스팸 방지 확인을 완료해 주세요.");
+        setMessage("Please complete the spam protection check before posting.");
         return;
       }
 
       const fields = new FormData(form);
+      const parentId = form.dataset.parentId || null;
       const payload = {
         pagePath: window.location.pathname,
+        parentId,
         nickname: String(fields.get("nickname") ?? ""),
         email: String(fields.get("email") ?? ""),
         website: String(fields.get("website") ?? "").trim() || null,
@@ -348,7 +457,7 @@ const script = String.raw`
       };
 
       submitButton.disabled = true;
-      submitButton.textContent = "등록 중…";
+      submitButton.textContent = parentId ? "Posting reply…" : "Posting…";
       setMessage("");
 
       try {
@@ -368,24 +477,25 @@ const script = String.raw`
             turnstile.reset(widgetId);
           }
           if (response.status === 403) {
-            throw new Error("스팸 방지 확인에 실패했습니다. 다시 확인한 뒤 등록해 주세요.");
+            throw new Error("Spam protection verification failed. Please try again.");
           }
           if (response.status === 503) {
-            throw new Error("스팸 방지 서비스가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요.");
+            throw new Error("Spam protection is temporarily unavailable. Please try again later.");
           }
-          throw new Error(data.error || "댓글 등록에 실패했습니다.");
+          throw new Error(data.error || "Unable to post your comment.");
         }
 
         form.elements.namedItem("body").value = "";
         turnstileToken = null;
         if (turnstile) turnstile.reset(widgetId);
-        setMessage("댓글이 등록되었습니다.");
+        closeReplyForm();
+        setMessage(parentId ? "Your reply has been posted." : "Your comment has been posted.");
         await fetchComments(true);
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "댓글 등록에 실패했습니다.");
+        setMessage(error instanceof Error ? error.message : "Unable to post your comment.");
       } finally {
         submitButton.disabled = false;
-        submitButton.textContent = "댓글 등록";
+        submitButton.textContent = form.dataset.parentId ? "Post reply" : "Post comment";
       }
     });
 
@@ -393,7 +503,7 @@ const script = String.raw`
 
     if (!siteKey) {
       submitButton.disabled = true;
-      setMessage("댓글 작성 기능을 활성화하려면 Turnstile Site Key를 설정해야 합니다.");
+      setMessage("Set a Cloudflare Turnstile Site Key to enable comment submission.");
       return;
     }
 
@@ -405,23 +515,23 @@ const script = String.raw`
       widgetId = turnstile.render(turnstileContainer, {
         sitekey: siteKey,
         theme: "auto",
-        language: "ko",
+        language: "en",
         callback: (token) => {
           turnstileToken = token;
           setMessage("");
         },
         "expired-callback": () => {
           turnstileToken = null;
-          setMessage("스팸 방지 확인이 만료되었습니다. 다시 확인해 주세요.");
+          setMessage("The spam protection check expired. Please verify again.");
         },
         "error-callback": () => {
           turnstileToken = null;
-          setMessage("스팸 방지 확인을 불러오지 못했습니다. 페이지를 새로고침해 주세요.");
+          setMessage("Unable to load spam protection. Please refresh the page.");
         },
       });
       submitButton.disabled = false;
     } catch {
-      setMessage("Turnstile을 불러오지 못했습니다. 페이지를 새로고침해 주세요.");
+      setMessage("Unable to load Turnstile. Please refresh the page.");
     }
   }
 
@@ -434,7 +544,7 @@ const script = String.raw`
 export function BlogComments(options = {}) {
   const apiPath = options.apiPath ?? "/api/comments";
   const turnstileSiteKey = options.turnstileSiteKey ?? "";
-  const locale = options.locale ?? "ko-KR";
+  const locale = options.locale ?? "en-US";
 
   const BlogCommentsComponent = ({ displayClass, fileData }) => {
     const commentsEnabled = fileData.frontmatter?.comments;
@@ -448,11 +558,11 @@ export function BlogComments(options = {}) {
         "data-api-path": apiPath,
         "data-turnstile-site-key": turnstileSiteKey,
         "data-locale": locale,
-        lang: "ko",
+        lang: "en",
         "aria-labelledby": "blog-comments-heading",
       },
       [
-        h("h2", { id: "blog-comments-heading", class: "blog-comments-heading" }, "댓글"),
+        h("h2", { id: "blog-comments-heading", class: "blog-comments-heading" }, "Comments"),
         h("div", {
           class: "blog-comments-list",
           "aria-live": "polite",
@@ -465,75 +575,76 @@ export function BlogComments(options = {}) {
             class: "blog-comments-more",
             hidden: true,
           },
-          "댓글 더 보기",
+          "Load more",
         ),
-        h("form", { class: "blog-comments-form" }, [
-          h("h3", { class: "blog-comments-form-heading" }, "댓글 작성"),
-          h("label", { class: "blog-comments-field" }, [
-            h("span", {}, "닉네임"),
-            h("input", {
-              type: "text",
-              name: "nickname",
-              maxLength: 40,
-              autoComplete: "nickname",
-              placeholder: "표시할 닉네임",
-              required: true,
+        h("div", { class: "blog-comments-form-home" }, [
+          h("form", { class: "blog-comments-form" }, [
+            h("h3", { class: "blog-comments-form-heading" }, "Leave a comment"),
+            h("label", { class: "blog-comments-field" }, [
+              h("span", {}, "Nickname"),
+              h("input", {
+                type: "text",
+                name: "nickname",
+                maxLength: 40,
+                autoComplete: "nickname",
+                placeholder: "Your display name",
+                required: true,
+              }),
+            ]),
+            h("label", { class: "blog-comments-field" }, [
+              h("span", {}, "Email"),
+              h("input", {
+                type: "email",
+                name: "email",
+                maxLength: 254,
+                autoComplete: "email",
+                placeholder: "Your email address",
+                required: true,
+              }),
+            ]),
+            h("label", { class: "blog-comments-field" }, [
+              h("span", {}, "Website (optional)"),
+              h("input", {
+                type: "url",
+                name: "website",
+                maxLength: 2048,
+                autoComplete: "url",
+                placeholder: "https://example.com",
+              }),
+            ]),
+            h("label", { class: "blog-comments-field" }, [
+              h("span", {}, "Comment"),
+              h("textarea", {
+                name: "body",
+                rows: 5,
+                maxLength: 5000,
+                placeholder: "Write your comment…",
+                required: true,
+              }),
+            ]),
+            h("div", {
+              class: "blog-comments-turnstile",
+              "aria-label": "Spam protection check",
             }),
-          ]),
-          h("label", { class: "blog-comments-field" }, [
-            h("span", {}, "이메일"),
-            h("input", {
-              type: "email",
-              name: "email",
-              maxLength: 254,
-              autoComplete: "email",
-              placeholder: "이메일 주소",
-              required: true,
+            h("p", {
+              class: "blog-comments-message",
+              role: "status",
+              "aria-live": "polite",
             }),
-          ]),
-          h("label", { class: "blog-comments-field" }, [
-            h("span", {}, "웹사이트 (선택)"),
-            h("input", {
-              type: "url",
-              name: "website",
-              maxLength: 2048,
-              autoComplete: "url",
-              placeholder: "https://example.com",
-            }),
-          ]),
-          h("label", { class: "blog-comments-field" }, [
-            h("span", {}, "내용"),
-            h("textarea", {
-              name: "body",
-              rows: 5,
-              maxLength: 5000,
-              placeholder: "댓글을 입력하세요.",
-              required: true,
-            }),
-          ]),
-          h("div", {
-            class: "blog-comments-turnstile",
-            "aria-label": "스팸 방지 확인",
-          }),
-          h("p", {
-            class: "blog-comments-message",
-            role: "status",
-            "aria-live": "polite",
-          }),
-          h(
-            "button",
-            {
+            h("button", {
               type: "submit",
               class: "blog-comments-submit",
               disabled: true,
-            },
-            "댓글 등록",
-          ),
-          h(
-            "p",
-            { class: "blog-comments-privacy" },
-            "등록한 댓글은 즉시 공개됩니다. 이메일 주소는 공개되지 않으며, 댓글 운영 및 스팸 대응을 위해 저장됩니다.",
-          ),
+            }, "Post comment"),
+            h("button", {
+              type: "button",
+              class: "blog-comments-cancel-reply",
+              hidden: true,
+            }, "Cancel reply"),
+            h("p", { class: "blog-comments-privacy" },
+              "Comments are published immediately. Your email address is not displayed and is stored for comment administration and spam prevention.",
+            ),
+          ]),
         ]),
       ],
     );

@@ -3,7 +3,7 @@ export interface BlogCommentsOptions {
   apiPath?: string;
   /** Public Cloudflare Turnstile Site Key. Never use the Secret Key here. */
   turnstileSiteKey?: string;
-  /** Locale used to format comment timestamps. Defaults to "ko-KR". */
+  /** Locale used to format comment timestamps. Defaults to "en-US". The locale affects date and time formatting only. */
   locale?: string;
 }
 

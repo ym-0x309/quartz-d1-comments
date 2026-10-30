@@ -8,10 +8,12 @@ This repository contains the **Quartz UI component only**. It does not provision
 
 - Anonymous comment submission; no visitor account required
 - Nickname, required email, optional website, and comment body
-- Chronological comment display with 30 comments per page
+- Chronological top-level comments with 30 threads per page
+- One level of replies under each top-level comment
 - Cloudflare Turnstile challenge before submission
-- Email is submitted to the API but is not expected in public API responses
+- Email is submitted to the API but is never included in public API responses
 - Comment content is rendered as text, not HTML
+- English interface; `locale` controls date and time formatting only
 - Per-page opt-out with frontmatter
 
 ## Requirements
@@ -42,6 +44,8 @@ Enable and configure the plugin in `quartz.config.yaml`:
     priority: 10
 ```
 
+The interface labels and messages are always English. The `locale` option is used only by the browser's date/time formatter (for example, `ko-KR` or `en-US`).
+
 Use the public Turnstile **Site Key** here. Never put the Turnstile Secret Key in Quartz configuration or client-side code.
 
 A page can disable comments with this frontmatter:
@@ -56,9 +60,11 @@ The component is intended for content pages. Exclude its `blog-comments` layout 
 
 The default API path is `/api/comments`. It must resolve to the same origin as the Quartz site. Set `apiPath` to another same-origin path if needed.
 
-### List comments
+### List comment threads
 
 `GET /api/comments?page=<encoded-page-path>&limit=30&offset=0`
+
+Pagination applies to top-level comments. Replies to each returned top-level comment are included with that comment, so a thread is never split across pages.
 
 Expected JSON response:
 
@@ -66,10 +72,22 @@ Expected JSON response:
 {
   "comments": [
     {
+      "id": "comment-id",
+      "parentId": null,
       "nickname": "Example",
       "website": "https://example.com",
       "body": "A comment",
-      "createdAt": 1790000000
+      "createdAt": 1790000000,
+      "replies": [
+        {
+          "id": "reply-id",
+          "parentId": "comment-id",
+          "nickname": "Another reader",
+          "website": null,
+          "body": "A reply",
+          "createdAt": 1790000100
+        }
+      ]
     }
   ],
   "hasMore": false,
@@ -77,24 +95,37 @@ Expected JSON response:
 }
 ```
 
-The public response must not include email addresses or other private fields. `createdAt` is a Unix timestamp in seconds. The component requests 30 records at a time and expects the API to return them in chronological order.
+The public response must not include email addresses or other private fields. `createdAt` is a Unix timestamp in seconds. The component requests 30 top-level comments at a time and expects both comments and replies in chronological order.
 
-### Submit a comment
+### Submit a comment or reply
 
-`POST /api/comments` with a JSON body:
+`POST /api/comments` with a JSON body. Omit `parentId` or set it to `null` for a top-level comment. Set `parentId` to a top-level comment ID to create a reply:
 
 ```json
 {
   "pagePath": "/notes/example/",
+  "parentId": "comment-id",
   "nickname": "Example",
   "email": "example@example.com",
   "website": "https://example.com",
-  "body": "A comment",
+  "body": "A reply",
   "turnstileToken": "TURNSTILE_RESPONSE_TOKEN"
 }
 ```
 
+The API must reject a parent ID that does not belong to the requested page or that is itself a reply. This implementation supports one reply level, not nested replies to replies.
+
 The API should validate all input, verify the Turnstile token **server-side** using the Secret Key, and store the email privately. A successful response should use a 2xx status. The component displays API-provided `error` text for most unsuccessful responses; it gives specific guidance for HTTP 403 and 503.
+
+## Database migration
+
+For an existing D1 comments table, apply the additive migration that adds the nullable `parent_id` column and its index before deploying the updated Worker:
+
+```bash
+npx wrangler d1 migrations apply blog-comments --remote
+```
+
+Existing rows keep `parent_id = NULL` and remain top-level comments.
 
 ## Security and privacy
 

@@ -1,6 +1,6 @@
 {
   "name": "@ym-0x309/quartz-d1-comments",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A self-hosted D1 and Turnstile comment component for Quartz 5",
   "type": "module",
   "license": "MIT",
@@ -34,7 +34,7 @@
     "name": "quartz-d1-comments",
     "displayName": "Quartz D1 Comments",
     "description": "A self-hosted comment component backed by a same-origin API and Cloudflare Turnstile.",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "quartzVersion": ">=5.0.0",
     "category": "component",
     "defaultEnabled": false,
@@ -47,7 +47,7 @@
       "BlogComments": {
         "displayName": "Blog Comments",
         "description": "Displays and submits comments through the site's comments API.",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "defaultPosition": "afterBody",
         "defaultPriority": 10
       }

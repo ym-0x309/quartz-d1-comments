@@ -280,6 +280,7 @@ const script = String.raw`
         "View " + replyCount + (replyCount === 1 ? " reply" : " replies"),
         { toggleReplies: comment.id },
       ));
+      actions.lastChild.setAttribute("aria-expanded", "false");
     }
 
     article.appendChild(actions);
@@ -418,36 +419,81 @@ const script = String.raw`
       }
     }
 
+    function ownChildElement(article, className) {
+      return Array.from(article.children).find((element) =>
+        element.classList.contains(className),
+      ) ?? null;
+    }
+
+    function findCommentArticle(commentId) {
+      return Array.from(list.querySelectorAll("[data-comment-id]")).find(
+        (element) => element.dataset.commentId === commentId,
+      ) ?? null;
+    }
+
+    function setThreadExpanded(article, expanded) {
+      const children = ownChildElement(article, "blog-comment-children");
+      const toggle = ownChildElement(article, "blog-comment-actions")
+        ?.querySelector("[data-toggle-replies]");
+      if (!children) return;
+      children.hidden = !expanded;
+      if (toggle) {
+        toggle.setAttribute("aria-expanded", String(expanded));
+        const count = Number(article.dataset.replyCount) || 0;
+        toggle.textContent = expanded
+          ? "Hide replies"
+          : "View " + count + (count === 1 ? " reply" : " replies");
+      }
+    }
+
     async function loadReplies(parentId, article, reset) {
-      const childList = article.querySelector(".blog-comment-children-list");
-      const loadMore = article.querySelector(".blog-comments-load-more");
-      const children = article.querySelector(".blog-comment-children");
-      const state = threadStates.get(parentId) ?? { offset: 0, hasMore: false, loaded: false, loading: false };
-      if (state.loading) return;
+      const childContainer = ownChildElement(article, "blog-comment-children");
+      const childList = childContainer
+        ? ownChildElement(childContainer, "blog-comment-children-list")
+        : null;
+      const loadMore = childContainer?.querySelector(":scope > .blog-comments-load-more");
+      const state = threadStates.get(parentId) ?? {
+        offset: 0,
+        hasMore: false,
+        loaded: false,
+        loading: false,
+      };
+      if (!childList || !loadMore || state.loading) return;
+
       state.loading = true;
       if (reset) state.loaded = false;
       threadStates.set(parentId, state);
       loadMore.disabled = true;
-      if (reset) childList.replaceChildren(makeMessage("blog-comments-empty", "Loading replies…"));
+      if (reset) {
+        childList.replaceChildren(makeMessage("blog-comments-empty", "Loading replies…"));
+      }
 
       try {
         const data = await requestComments(parentId, reset ? 0 : state.offset);
+        if (data.parentId !== parentId) {
+          throw new Error("The replies response did not match the requested parent.");
+        }
         const comments = Array.isArray(data.comments) ? data.comments : [];
+        if (comments.some((comment) => comment.parentId !== parentId)) {
+          throw new Error("The API returned a reply for a different parent.");
+        }
+
         if (reset) childList.replaceChildren();
-        const parentAuthor = article.querySelector(".blog-comment-author")?.textContent || "this comment";
+        const parentAuthor = ownChildElement(article, "blog-comment-header")
+          ?.querySelector(".blog-comment-author")?.textContent || "this comment";
+        const depth = Number(article.style.getPropertyValue("--comment-depth")) || 0;
+
         for (const comment of comments) {
-          childList.appendChild(renderComment(comment, locale, Number(article.style.getPropertyValue("--comment-depth")) + 1, parentAuthor));
+          childList.appendChild(renderComment(comment, locale, depth + 1, parentAuthor));
         }
         if (reset && comments.length === 0) {
           childList.appendChild(makeMessage("blog-comments-empty", "No replies yet."));
         }
+
         state.hasMore = data.hasMore === true && Number.isInteger(data.nextOffset);
         state.offset = state.hasMore ? data.nextOffset : 0;
         state.loaded = true;
         loadMore.hidden = !state.hasMore;
-        children.hidden = false;
-        const toggle = article.querySelector("[data-toggle-replies]");
-        if (toggle) toggle.textContent = "Hide replies";
       } catch (error) {
         if (reset) {
           state.loaded = false;
@@ -465,7 +511,14 @@ const script = String.raw`
     function updateReplyCount(article, delta) {
       const nextCount = Math.max(0, Number(article.dataset.replyCount || 0) + delta);
       article.dataset.replyCount = String(nextCount);
-      let toggle = article.querySelector("[data-toggle-replies]");
+
+      // Only inspect this comment's own action row. A descendant may also
+      // have a reply toggle, and must never be mistaken for this one.
+      const actions = ownChildElement(article, "blog-comment-actions");
+      const children = ownChildElement(article, "blog-comment-children");
+      if (!actions || !children) return;
+
+      let toggle = actions.querySelector(":scope > [data-toggle-replies]");
       if (nextCount === 0) {
         toggle?.remove();
         return;
@@ -474,9 +527,12 @@ const script = String.raw`
         toggle = makeButton("blog-comments-toggle-replies", "", {
           toggleReplies: article.dataset.commentId,
         });
-        article.querySelector(".blog-comment-actions").appendChild(toggle);
+        toggle.setAttribute("aria-expanded", String(!children.hidden));
+        actions.appendChild(toggle);
       }
-      const expanded = !article.querySelector(".blog-comment-children").hidden;
+
+      const expanded = !children.hidden;
+      toggle.setAttribute("aria-expanded", String(expanded));
       toggle.textContent = expanded
         ? "Hide replies"
         : "View " + nextCount + (nextCount === 1 ? " reply" : " replies");
@@ -502,18 +558,15 @@ const script = String.raw`
       if (toggle && list.contains(toggle)) {
         const article = toggle.closest(".blog-comment");
         const parentId = toggle.dataset.toggleReplies;
-        const children = article?.querySelector(".blog-comment-children");
+        const children = article && ownChildElement(article, "blog-comment-children");
         if (!article || !children) return;
         if (!children.hidden) {
-          children.hidden = true;
-          toggle.textContent = "View " + article.dataset.replyCount +
-            (Number(article.dataset.replyCount) === 1 ? " reply" : " replies");
+          setThreadExpanded(article, false);
           return;
         }
-        children.hidden = false;
+        setThreadExpanded(article, true);
         const state = threadStates.get(parentId);
         if (!state?.loaded) await loadReplies(parentId, article, true);
-        else toggle.textContent = "Hide replies";
         return;
       }
 
@@ -570,21 +623,29 @@ const script = String.raw`
           throw new Error(data.error || "Unable to post your comment.");
         }
 
+        if (parentId && data.comment?.parentId !== parentId) {
+          throw new Error("The server response did not match the selected reply target.");
+        }
+
         form.elements.namedItem("body").value = "";
         turnstileToken = null;
         if (turnstile) turnstile.reset(widgetId);
         closeReplyForm();
 
         if (parentId) {
-          const parentArticle = list.querySelector(
-            '[data-comment-id="' + CSS.escape(parentId) + '"]',
-          );
-          if (parentArticle) {
-            updateReplyCount(parentArticle, 1);
-            const children = parentArticle.querySelector(".blog-comment-children");
-            children.hidden = false;
-            await loadReplies(parentId, parentArticle, true);
+          const parentArticle = findCommentArticle(parentId);
+          if (!parentArticle) {
+            throw new Error("The parent comment is no longer visible. Reload the comments and try again.");
           }
+          updateReplyCount(parentArticle, 1);
+          setThreadExpanded(parentArticle, true);
+          const state = threadStates.get(parentId);
+          if (state) {
+            state.offset = 0;
+            state.hasMore = false;
+          }
+          await loadReplies(parentId, parentArticle, true);
+          setThreadExpanded(parentArticle, true);
           setMessage("Your reply has been posted.");
         } else {
           await loadRootComments(true);

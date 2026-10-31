@@ -280,6 +280,7 @@ const script = String.raw`
         "View " + replyCount + (replyCount === 1 ? " reply" : " replies"),
         { toggleReplies: comment.id },
       ));
+      actions.lastChild.setAttribute("aria-expanded", "false");
     }
 
     article.appendChild(actions);
@@ -510,7 +511,14 @@ const script = String.raw`
     function updateReplyCount(article, delta) {
       const nextCount = Math.max(0, Number(article.dataset.replyCount || 0) + delta);
       article.dataset.replyCount = String(nextCount);
-      let toggle = article.querySelector("[data-toggle-replies]");
+
+      // Only inspect this comment's own action row. A descendant may also
+      // have a reply toggle, and must never be mistaken for this one.
+      const actions = ownChildElement(article, "blog-comment-actions");
+      const children = ownChildElement(article, "blog-comment-children");
+      if (!actions || !children) return;
+
+      let toggle = actions.querySelector(":scope > [data-toggle-replies]");
       if (nextCount === 0) {
         toggle?.remove();
         return;
@@ -519,9 +527,12 @@ const script = String.raw`
         toggle = makeButton("blog-comments-toggle-replies", "", {
           toggleReplies: article.dataset.commentId,
         });
-        article.querySelector(".blog-comment-actions").appendChild(toggle);
+        toggle.setAttribute("aria-expanded", String(!children.hidden));
+        actions.appendChild(toggle);
       }
-      const expanded = !article.querySelector(".blog-comment-children").hidden;
+
+      const expanded = !children.hidden;
+      toggle.setAttribute("aria-expanded", String(expanded));
       toggle.textContent = expanded
         ? "Hide replies"
         : "View " + nextCount + (nextCount === 1 ? " reply" : " replies");
